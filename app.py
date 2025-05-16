@@ -1,122 +1,117 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+from dash import Dash, html, dcc, Input, Output, State
+import dash_bootstrap_components as dbc
 from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
-# ---------- Page Config ----------
-st.set_page_config(page_title="Diabetes Predictor", layout="wide", page_icon="🩺")
+# Load dataset
+df = pd.read_csv('diabetes.csv')
 
-# ---------- Custom CSS for Alerts ----------
-hide_streamlit_style = """
-<style>
-/* Hide hamburger menu and footer */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-
-/* Custom alert styles */
-.alert {
-    padding: 20px;
-    color: white;
-    font-size: 20px;
-    font-weight: bold;
-    text-align: center;
-    border-radius: 8px;
-    margin-top: 20px;
-    position: relative;
-}
-.success {background-color: #2ecc71;}
-.warning {background-color: #e74c3c;}
-.closebtn {
-    position: absolute;
-    top: 5px;
-    right: 20px;
-    color: white;
-    font-weight: bold;
-    cursor: pointer;
-}
-</style>
-"""
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-# ---------- Load Data ----------
-@st.cache_data
-def load_data():
-    return pd.read_csv("diabetes.csv")
-
-df = load_data()
-
-# ---------- Sidebar ----------
-st.sidebar.title("🧪 Input Features")
-st.sidebar.markdown("Enter patient information:")
-
-pregnancies = st.sidebar.slider("Pregnancies", 0, 20, 2)
-glucose = st.sidebar.slider("Glucose", 0, 200, 100)
-bp = st.sidebar.slider("Blood Pressure", 0, 122, 70)
-skin = st.sidebar.slider("Skin Thickness", 0, 100, 20)
-insulin = st.sidebar.slider("Insulin", 0, 846, 79)
-bmi = st.sidebar.slider("BMI", 0.0, 67.1, 25.0)
-dpf = st.sidebar.slider("Diabetes Pedigree Function", 0.0, 2.5, 0.5)
-age = st.sidebar.slider("Age", 10, 100, 33)
-
-input_data = np.array([[pregnancies, glucose, bp, skin, insulin, bmi, dpf, age]])
-
-# ---------- Train Model ----------
-X = df.drop("Outcome", axis=1)
-y = df["Outcome"]
-
+# Prepare model
+X = df.drop('Outcome', axis=1)
+y = df['Outcome']
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
-input_scaled = scaler.transform(input_data)
-
 X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
-model = RandomForestClassifier(n_estimators=100, random_state=42)
+model = LogisticRegression()
 model.fit(X_train, y_train)
 
-prediction = model.predict(input_scaled)[0]
-probability = model.predict_proba(input_scaled)[0][1] * 100
+# Start Dash app
+app = Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
+server = app.server
 
-# ---------- Main Area ----------
-st.title("💉 Diabetes Prediction Dashboard")
+# Input form fields
+input_fields = [
+    {'id': 'Pregnancies', 'label': 'Pregnancies'},
+    {'id': 'Glucose', 'label': 'Glucose'},
+    {'id': 'BloodPressure', 'label': 'Blood Pressure'},
+    {'id': 'SkinThickness', 'label': 'Skin Thickness'},
+    {'id': 'Insulin', 'label': 'Insulin'},
+    {'id': 'BMI', 'label': 'BMI'},
+    {'id': 'DiabetesPedigreeFunction', 'label': 'Diabetes Pedigree Function'},
+    {'id': 'Age', 'label': 'Age'}
+]
 
-# ---------- Preview Data ----------
-st.subheader("📋 Sample Data")
-st.dataframe(df.sample(5), use_container_width=True)
+# Layout
+app.layout = dbc.Container([
+    html.H1("🧬 Diabetes Prediction Dashboard", className="text-center text-info my-4"),
 
-# ---------- Charts ----------
-col1, col2 = st.columns(2)
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Patient Information"),
+                dbc.CardBody([
+                    *[dbc.Input(id=f['id'], placeholder=f['label'], type='number', className='mb-2') for f in input_fields],
+                    dbc.Button("Predict", id='predict-btn', color='primary', className='mt-2 w-100'),
+                ])
+            ])
+        ], md=4),
 
-with col1:
-    pie_fig = px.pie(df, names="Outcome", title="Diabetes Outcome Distribution", color_discrete_sequence=px.colors.sequential.RdBu)
-    st.plotly_chart(pie_fig, use_container_width=True)
+        dbc.Col([
+            html.H5("Insights & Visualizations", className="text-white"),
+            dcc.Tabs([
+                dcc.Tab(label='Age Histogram', children=[
+                    dcc.Graph(figure=px.histogram(df, x='Age', color='Outcome', barmode='overlay', nbins=30))
+                ]),
+                dcc.Tab(label='BMI vs Glucose', children=[
+                    dcc.Graph(figure=px.scatter(df, x='BMI', y='Glucose', color='Outcome'))
+                ]),
+                dcc.Tab(label='BMI Box Plot', children=[
+                    dcc.Graph(figure=px.box(df, x='Outcome', y='BMI', color='Outcome'))
+                ]),
+                dcc.Tab(label='Diabetes Ratio Pie', children=[
+                    dcc.Graph(figure=px.pie(df, names='Outcome', title='Diabetic vs Non-Diabetic'))
+                ]),
+            ])
+        ], md=8),
+    ]),
 
-with col2:
-    hist_fig = px.histogram(df, x="Age", color="Outcome", barmode="overlay", title="Age Distribution by Outcome")
-    st.plotly_chart(hist_fig, use_container_width=True)
+    html.Hr(),
 
-# ---------- Prediction Result ----------
-st.subheader("🩺 Prediction Result")
+    html.H4("📋 Data Sample Preview", className="text-white mt-3"),
+    dbc.Table.from_dataframe(df.sample(10), striped=True, bordered=True, hover=True, className='text-white bg-dark'),
 
-if "hide_alert" not in st.session_state:
-    st.session_state.hide_alert = False
+    # Modal Alert
+    dbc.Modal([
+        dbc.ModalHeader(dbc.ModalTitle("🧠 Prediction Result"), close_button=True),
+        dbc.ModalBody(id='modal-body', className="fs-5 fw-semibold"),
+    ], id='result-modal', is_open=False, centered=True, size="lg", backdrop='static'),
+], fluid=True)
 
-if st.button("🔍 Predict"):
-    st.session_state.hide_alert = False
 
-if not st.session_state.hide_alert:
-    if probability > 50:
-        st.markdown(f"""
-        <div class="alert warning">
-            <span class="closebtn" onclick="this.parentElement.style.display='none';">&times;</span>
-            🚨 High Risk: You have a {probability:.2f}% chance of having diabetes. Please consult your doctor and take preventive measures.
-        </div>
-        """, unsafe_allow_html=True)
+# Prediction callback
+@app.callback(
+    Output('modal-body', 'children'),
+    Output('result-modal', 'is_open'),
+    Input('predict-btn', 'n_clicks'),
+    [State(f['id'], 'value') for f in input_fields]
+)
+def predict(n_clicks, *values):
+    if not n_clicks:
+        return "", False
+    if None in values:
+        return "⚠️ Please fill in all fields to proceed with prediction.", True
+
+    input_array = scaler.transform([values])
+    pred = model.predict(input_array)[0]
+    prob = model.predict_proba(input_array)[0][1]
+    percent = round(prob * 100, 2)
+
+    if prob >= 0.5:
+        return (
+            f"⚠️ High risk of diabetes detected.\n\n"
+            f"Your estimated probability is {percent}%. Please consult with a healthcare professional.",
+            True
+        )
     else:
-        st.markdown(f"""
-        <div class="alert success">
-            <span class="closebtn" onclick="this.parentElement.style.display='none';">&times;</span>
-            ✅ Low Risk: You have only a {probability:.2f}% chance of having diabetes. Keep up your healthy lifestyle!
-        </div>
-        """, unsafe_allow_html=True)
+        return (
+            f"✅ Low risk of diabetes.\n\n"
+            f"Your estimated probability is {percent}%. Keep maintaining a healthy lifestyle!",
+            True
+        )
+
+# Run
+if __name__ == '__main__':
+    app.run_server(debug=True)
